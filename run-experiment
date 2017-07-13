@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+
+import sys
+import argparse
+import os
+import argparse
+import yaml
+import json
+from attrdict import AttrDict
+
+from config import ConfigHelper, ConfigKWArg
+
+def parse_args():
+    helper = ConfigHelper('''
+        Runs an experiment and saves the output and import contextual files to an experiments directory.
+        Default configuration args can be specified in a YAML or JSON configuration file as well and
+          then overriden with command line args.
+        The command is run with OUTPUT_DIR env variable set to the output directory for the experiment, if
+          files are to written by the experiment to an experiment-specific context.
+        ''')
+    helper.add_argument(ConfigKWArg("context", "./src/train-model.py", type='filesr', required=False,
+        short_name="c", nargs='+',
+        help='Context files (or directories) to save with the results. They are saved before running the experiment. This is usually the code for the experiment.'))
+    helper.add_argument(ConfigKWArg("output", "./tf-logdir", type='filesr', required=False,
+        short_name="o", nargs='+',
+        help='Output files (or directories) from the experiment. They are saved after running the experiment. NOTE that OUTPUT_DIR is also passed to the experiment where output files can be saved directly without using the -o flag.'))
+    helper.add_argument(ConfigKWArg("name", "preliminary-experiment-lambda-1e-1", type=str, required=False,
+        short_name="n", default='untitled',
+        help='The name of the experiment'))
+    helper.add_argument(ConfigKWArg("desc", "The first lambda setting tried.", type=str, required=False,
+        short_name="d", default='',
+        help='The description of the experiment'))
+    helper.add_argument(ConfigKWArg("exp-dir", "~/scratch/gan-experiments",
+        type='filer', required=False,
+        default="/tmp/%s-experiments" % os.getenv("USER"),
+        help='The base experiments directory in which to save all experiments'))
+    helper.add_argument(ConfigKWArg("command", "python3 train-model.py",
+        type=str, required=True,
+        help='The command to run'))
+    config = helper.parse_args()
+
+def main():
+    try:
+        args = parse_args()
+    except RuntimeError as details:
+        print(details, file=sys.stderr)
+        print("Consult --help", file=sys.stderr)
+        sys.exit(1)
+
+    # TODO:  Continue!  It's a work in progress
+
+if __name__ == "__main__":
+    main()
