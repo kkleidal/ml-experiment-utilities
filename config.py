@@ -105,7 +105,7 @@ class ConfigHelper:
         dump(obj, fileobj)
 
     def make_yaml_stub(self, fileobj, config=None):
-        self._make_stub(fileobj, lambda x, f: yaml.dump(x, f, indent=2, default_flow_style=False, sort_keys=True), config)
+        self._make_stub(fileobj, lambda x, f: yaml.dump(x, f, indent=2, default_flow_style=False), config)
 
     def make_json_stub(self, fileobj, config=None):
         self._make_stub(fileobj, lambda x, f: json.dump(x, f, indent=2, separators=(',', ': '), sort_keys=True), config)

@@ -1,16 +1,32 @@
 #!/usr/bin/env python3
 
 import sys
-import argparse
 import os
-import argparse
-import yaml
-import json
-from attrdict import AttrDict
+import datetime
+import subprocess
+import shutil
+import fileinput
+from threading import Thread
 
 from config import ConfigHelper, ConfigKWArg
 
-def parse_args():
+def get_dir(config):
+    with subprocess.Popen(["hostname"], stdout=subprocess.PIPE) as p:
+        hostname = p.stdout.read().decode('utf8').strip()
+
+    visible = os.getenv("CUDA_VISIBLE_DEVICES", "")
+    if len(visible) > 0:
+        visible = "GPUs" + visible
+    else:
+        visible = "CPU"
+
+    name_vals = (config.name, hostname, visible, datetime.datetime.now().isoformat())
+    name = "%s.exp" % "-".join(name_vals)
+    dirname = os.path.join(config.exp_dir, name)
+    os.makedirs(dirname, exist_ok=True)
+    return dirname
+
+def make_config_helper():
     helper = ConfigHelper('''
         Runs an experiment and saves the output and import contextual files to an experiments directory.
         Default configuration args can be specified in a YAML or JSON configuration file as well and
@@ -30,24 +46,68 @@ def parse_args():
     helper.add_argument(ConfigKWArg("desc", "The first lambda setting tried.", type=str, required=False,
         short_name="d", default='',
         help='The description of the experiment'))
-    helper.add_argument(ConfigKWArg("exp-dir", "~/scratch/gan-experiments",
+    helper.add_argument(ConfigKWArg("exp_dir", "~/scratch/gan-experiments",
         type='filer', required=False,
         default="/tmp/%s-experiments" % os.getenv("USER"),
         help='The base experiments directory in which to save all experiments'))
     helper.add_argument(ConfigKWArg("command", "python3 train-model.py",
         type=str, required=True,
         help='The command to run'))
-    config = helper.parse_args()
+    return helper
+
+def tee(stream_in, stream_outs):
+    try:
+        while True:
+            for data in stream_in:
+                for stream_out in stream_outs:
+                    stream_out.write(data)
+                    stream_out.flush()
+    except ValueError:
+        pass
+    finally:
+        pass
 
 def main():
+    config_helper = make_config_helper()
     try:
-        args = parse_args()
+        config = config_helper.parse_args()
     except RuntimeError as details:
-        print(details, file=sys.stderr)
-        print("Consult --help", file=sys.stderr)
+        print("run-experiment: %s" % details, file=sys.stderr)
+        print("run-experiment: Consult --help", file=sys.stderr)
         sys.exit(1)
+    dirname = get_dir(config)
+    with open(os.path.join(dirname, "meta.yaml"), "w") as f:
+        config_helper.make_yaml_stub(f, config)
+    context_dir = os.path.join(dirname, "context")
+    os.makedirs(context_dir, exist_ok=True)
+    output_dir = os.path.join(dirname, "output")
+    os.makedirs(output_dir, exist_ok=True)
 
-    # TODO:  Continue!  It's a work in progress
+    copy = lambda x: shutil.copy2(x, \
+            os.path.join(context_dir, os.path.basename(os.path.abspath(filename))))
+    for filename in config.context:
+       copy(filename) 
+
+    return_code = -1
+    try:
+        with subprocess.Popen(["bash", "-c", config.command], stdin=sys.stdin,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env={"OUTPUT_DIR": output_dir}) as p:
+            with open(os.path.join(dirname, "stdout.log"), "wb") as stdout, \
+                    open(os.path.join(dirname, "stderr.log"), "wb") as stderr:
+                thread = Thread(target=tee, args=(p.stderr, [sys.stderr.buffer, stderr]))
+                thread.start()
+                tee(p.stdout, [sys.stdout.buffer, stdout])
+                thread.join()
+            return_code = p.wait()
+    except KeyboardInterrupt:
+        print("run-experiment: Keyboard interrupt.", file=sys.stderr)
+    finally:
+        with open(os.path.join(dirname, "return-code.txt"), "w") as f:
+            f.write("%d" % return_code)
+
+        for filename in config.output:
+            copy(filename)
 
 if __name__ == "__main__":
     main()
